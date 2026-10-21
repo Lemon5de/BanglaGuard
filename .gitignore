@@ -1,5 +1,17 @@
-.env
+# Virtual Environments
+venv/
 .venv/
-.vscode/
+env/
+
+# Environment Variables & Secrets
+.env
+
+# Dynamic Runtime State Data
+slurs.json
+
+# Cache & Python Artifacts
 __pycache__/
-*.pyc
+*.py[c]
+
+# Vscode Settings
+.vscode
