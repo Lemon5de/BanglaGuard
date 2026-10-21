@@ -71,15 +71,18 @@ def contains_slur(raw: str) -> bool:
                 print(f'Detected long slur (skeleton match): {word}')
                 return True
 
-    individual_words = [clean_text(w) for w in raw.split()]
-    duped_vowels = [re.sub(r'(aeiou)\1+', r'\1', w) for w in individual_words]
+    individual_words = [clean_text(w) for w in raw.split() if clean_text(w) ]
+    duped_vowels = [re.sub(r'([aeiou])\1+', r'\1', w) for w in individual_words]
     duped_all = [re.sub(r'(.)\1+', r'\1', w) for w in individual_words]
     for word in slurs:
-        if len(word) < 5 and (word in individual_words or word in duped_vowels or duped_all):
+        cleaned_word = clean_text(word)
+        if not cleaned_word:
+          continue
+        if len(cleaned_word) < 5 and (cleaned_word in individual_words or cleaned_word in duped_vowels or cleaned_word in duped_all):
             print(f'Detected short slur: {word}')
             return True
 
-    return False    
+    return False
 
 def is_authed():
     async def predicate(interaction: discord.Interaction) -> bool:
