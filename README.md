@@ -24,6 +24,24 @@
 
 ---
 
+## ⚙️ Configuration
+
+To adapt the bot for your own server, update the configuration block near the top of `bot.py`[cite: 34]:
+
+```python
+# Allowed administrative roles (Names or IDs)
+ALLOWED_ROLE_NAMES = {"Admin", "Developer", "Officer", "Creator"}
+ALLOWED_ROLE_IDS = {1561711906472071288, 1561842901011664906}
+
+# Categories where slur moderation is ignored (IDs or Lowercase Names)
+IGNORED_CATEGORIES = {
+    1561711922477273090,  # Category ID
+    "information", "staff", "support"  # Lowercase Category Names
+}
+```
+
+---
+
 ## 🚀 Getting Started
 
 ### Prerequisites
