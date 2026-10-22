@@ -15,8 +15,18 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 TOKEN = os.getenv("DISCORD_TOKEN")
 SLURS_FILE = 'slurs.json'
 
+# ------------------------------ CHANGE THIS SECTION TO VALUES ACCORDING TO YOUR SERVER -----------------------------------
 ALLOWED_ROLE_NAMES = {"Admin", "Developer", "Officer", "Creator"}
 ALLOWED_ROLE_IDS = {1561711906472071288,1561842901011664906,1561817331301355590,1561817027788673114}
+IGNORED_CATEGORIES = {
+    1561711922477273090, # Information ID
+    1561712022175883396, # Staff ID
+    1561712014752227451, # Support ID
+    "information",       # Category Name
+    "staff",             # Category Name
+    "support"            # Category Name
+}
+# -------------------------------------------------------------------------------------------------------------------------
 
 default_slurs = [
     "madarchod", "madarchood", "bonchod", "heda", "kutta", "bokachoda", "bainchod", "boonchod", "khanki",
@@ -96,6 +106,25 @@ def is_authed():
         raise app_commands.CheckFailure("You do not have permission or an authorized role to use this command.")
     return app_commands.check(predicate)
 
+def is_category_ignored(channel) -> bool:
+    category = getattr(channel, 'category', None)
+    if not category:
+        return False
+    return(
+        category.id in IGNORED_CATEGORIES or 
+        category.name.lower() in IGNORED_CATEGORIES
+    )
+# -------------------- USED TO IGNORE HIGH STATUS MEMBERS(NO USE CURRENTLY)----------------------------
+# def is_member_ignored(author) -> bool:
+#     if not isinstance(author, discord.Member):
+#         return False
+#     if author.guild_permissions.manage_messages or author.guild_permissions.administrator:
+#         return True
+#     return any(
+#         role.name in ALLOWED_ROLE_NAMES or role.id in ALLOWED_ROLE_IDS
+#         for role in author.roles
+#     )
+    
 
 @bot.event
 async def on_ready():
@@ -105,6 +134,7 @@ async def on_ready():
         name="your messages 👀"
     )
     await bot.change_presence(activity=activity)
+
     try:
         synced = await bot.tree.sync()
         print(f"Synced {len(synced)} slash command(s).")
@@ -113,17 +143,36 @@ async def on_ready():
 
 
 @bot.event
-async def on_message(message):
-    if message.author == bot.user:
+async def on_message(message: discord.Message):
+    # Ignore Bot msg and DM
+    if message.author.bot or not message.guild:
         return
+
+    # Test Command
     if message.content.startswith('!hello'):
         await message.channel.send("HELLO")
+
+    # Ignore Category Filtering but still proccess commands
+    if is_category_ignored(message.channel):
+        channel_name = getattr(message.channel, 'name', 'no-name')
+        category = getattr(message.channel, 'category', None)
+        category_name = getattr(category, 'name', 'No Category')
+        print(f"msg ignored in {channel_name} under {category_name}")
+        await bot.process_commands(message)
+        return
+
+    # Filtering in ALL user Channels for All users
     if contains_slur(message.content):
         await message.delete()
         await message.channel.send(
             f"{message.author.mention}, Chi chi, pocha kotha bolte neii🤫🤫",
             delete_after=5
         )
+        return
+
+    # Proccess Commands in valid msgs
+    await bot.process_commands(message)
+
 
 @bot.tree.command(
     name="addslur",
