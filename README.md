@@ -6,11 +6,11 @@
 
 ## ✨ Features
 
-- **Advanced Pattern Matching:** Detects exact matches, leetspeak character replacements (`@` -> `a`, `3` -> `e`), vowel duplication, and skeleton word roots.
+- **Word-Isolated Pattern Matching:** Tokenizes words individually to prevent cross-word false positives while detecting exact matches, leetspeak (`@` -> `a`, `3` -> `e`), vowel spam, and 4+ consonant word skeletons.
 - **Dynamic Blacklist:** Add or remove slurs on the fly via slash commands without restarting the bot.
+- **Granular Moderation Toggles:** Enable, disable, or inspect slur filtering per-channel or server-wide with persistent per-guild storage (`mod_config.json`).
 - **Role-Based Access Control:** Restricts administrative commands to specific server roles (`Admin`, `Developer`, `Officer`, `Creator`) or users with `Manage Messages` permissions.
-- **Auto-Moderation:** Automatically deletes detected messages and sends an ephemeral, self-destructing notice to the user.
-
+- **Auto-Moderation:** Automatically deletes detected messages and sends a temporary warning notice to the user.
 ---
 
 ## 🛠️ Slash Commands
@@ -21,6 +21,7 @@
 | `/addslur <word>` | Adds a new slur/word to the filtering engine. | Authorized Roles / Manage Messages |
 | `/removeslur <word>` | Removes a slur/word from the filtering engine. | Authorized Roles / Manage Messages |
 | `/listslurs` | Displays an embed listing all blacklisted words. | Authorized Roles / Manage Messages |
+| `/togglemoderation <scope>` | Toggles slur filtering for the current channel or entire server, or displays current status. | Authorized Roles / Manage Messages |
 
 ---
 
@@ -53,7 +54,7 @@ IGNORED_CATEGORIES = {
 
 1. **Clone the repository:**
    ```bash
-   git clone [https://github.com/Lemon5de/BanglaGuard.git](https://github.com/Lemon5de/BanglaGuard.git)
+   git clone https://github.com/Lemon5de/BanglaGuard.git
    cd BanglaGuard
    ```
 
