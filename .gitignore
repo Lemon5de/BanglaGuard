@@ -8,6 +8,7 @@ env/
 
 # Dynamic Runtime State Data
 slurs.json
+mod_config.json
 
 # Cache & Python Artifacts
 __pycache__/
