@@ -14,6 +14,7 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 SLURS_FILE = 'slurs.json'
+MOD_CONFIG_FILE = 'mod_config.json'
 
 # ------------------------------ CHANGE THIS SECTION TO VALUES ACCORDING TO YOUR SERVER -----------------------------------
 ALLOWED_ROLE_NAMES = {"Admin", "Developer", "Officer", "Creator"}
@@ -55,8 +56,29 @@ def load_slurs() -> set:
 def save_slurs(data):
     with open(SLURS_FILE, "w", encoding="utf-8") as f:
         json.dump(list(data), f, indent=4)
-
 slurs = load_slurs()
+
+
+def load_mod_config() -> dict:
+    if os.path.exists(MOD_CONFIG_FILE):
+        with open(MOD_CONFIG_FILE, "r") as f:
+            return json.load(f)
+    return {"server disabled" : False, "disabled_channels" : []}
+
+def save_mod_config(config: dict) -> None:
+    with open(MOD_CONFIG_FILE, "w") as f:
+         json.dump(config, f, indent=4)
+mod_config = load_mod_config()
+
+def get_guild_config(guild_id: int) -> dict:
+    gid = str(guild_id)
+    if gid not in mod_config:
+        mod_config[gid] = {
+            "server_disabled": False,
+            "disabled_channels": []
+        }
+        save_mod_config(mod_config)
+    return mod_config[gid]
 
 def clean_text(text: str) -> str:
     decoded = text.lower().translate(CHAR_MAP)
@@ -67,31 +89,54 @@ def get_skeleton(text: str) -> str:
     return re.sub(r'[aeiou]', '', text)
 
 def contains_slur(raw: str) -> bool:
-    cleaned = clean_text(raw)
-    for word in slurs:
-        if len(word) >= 5 and word in cleaned:
-            print(f'Detected long slur: {word}')
-            return True
+    # Pair each raw word with its cleaned version so we never lose the original text
+    tokens = []
+    for raw_w in raw.split():
+        cleaned_w = clean_text(raw_w)
+        if cleaned_w:
+            tokens.append({
+                "raw": raw_w,
+                "clean": cleaned_w,
+                "duped_v": re.sub(r'([aeiou])\1+', r'\1', cleaned_w),
+                #"duped_a": re.sub(r'(.)\1+', r'\1', cleaned_w),
+                "skele": get_skeleton(cleaned_w)
+            })
 
-    msg_skele = get_skeleton(cleaned)
-    for word in slurs:
-        if len(word) >= 5:
-            word_skele = get_skeleton(word)
-            if len(word_skele) >= 3 and word_skele in msg_skele:
-                print(f'Detected long slur (skeleton match): {word}')
-                return True
+    if not tokens:
+        return False
 
-    individual_words = [clean_text(w) for w in raw.split() if clean_text(w) ]
-    duped_vowels = [re.sub(r'([aeiou])\1+', r'\1', w) for w in individual_words]
-    duped_all = [re.sub(r'(.)\1+', r'\1', w) for w in individual_words]
+    cleaned_spaced = " ".join(t["clean"] for t in tokens)
     for word in slurs:
         cleaned_word = clean_text(word)
         if not cleaned_word:
-          continue
-        if len(cleaned_word) < 5 and (cleaned_word in individual_words or cleaned_word in duped_vowels or cleaned_word in duped_all):
-            print(f'Detected short slur: {word}')
-            return True
+            continue
 
+        # Long Slurs Check (>= 5 characters)
+        if len(cleaned_word) >= 5:
+            if cleaned_word in cleaned_spaced:
+                # tokens that triggered the match, either by containing the cleaned_word or being contained by it
+                matched_tokens = [t for t in tokens if cleaned_word in t["clean"] or t["clean"] in cleaned_word]
+                raw_str = " ".join(t["raw"] for t in matched_tokens) or raw
+                clean_str = " ".join(t["clean"] for t in matched_tokens) or cleaned_spaced
+                print(f"Long slur detected: '{raw_str}' -> rebuilt as '{clean_str}' -> matched '{word}'")
+                return True
+
+            word_skele = get_skeleton(cleaned_word)
+            if len(word_skele) >= 4:
+                for t in tokens:
+                    if word_skele == t["skele"] or (word_skele in t["skele"] and len(t["clean"]) >= 6):
+                        print(f"Skeleton slur detected: '{t['raw']}' -> rebuilt as '{t['clean']}' (skele: '{t['skele']}') -> matched '{word}'")
+                        return True
+
+        # Short Slurs Check (< 5 characters)
+        else:
+            for t in tokens:
+                if cleaned_word in (t["clean"], t["duped_v"]):
+                    # Show the exact proccessed version of the word that matched the slur for debugging purposes
+                    rebuilt = t["clean"] if cleaned_word == t["clean"] else t["duped_v"]
+                    print(f"Short slur detected: '{t['raw']}' -> rebuilt as '{rebuilt}' -> matched '{word}'")
+                    return True
+                
     return False
 
 def is_authed():
@@ -152,6 +197,17 @@ async def on_message(message: discord.Message):
     if message.content.startswith('!hello'):
         await message.channel.send("HELLO")
 
+    # 1. Per-Server Moderation Toggle
+    guild_cfg = get_guild_config(message.guild.id)
+    if guild_cfg.get("server_disabled", False):
+        await bot.process_commands(message)
+        return
+
+    # 2. Per-Channel Moderation Toggle
+    if message.channel.id in guild_cfg.get("disabled_channels", []):
+        await bot.process_commands(message)
+        return
+    
     # Ignore Category Filtering but still proccess commands
     if is_category_ignored(message.channel):
         channel_name = getattr(message.channel, 'name', 'no-name')
@@ -246,6 +302,80 @@ async def list_slurs(interaction: discord.Interaction):
     embed.set_footer(text=f"Requested by {interaction.user.name}", icon_url=interaction.user.display_avatar.url)
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@bot.tree.command(
+    name="togglemoderation",
+    description="⏯️ Toggle slur moderation on/off for this channel or the entire server"
+)
+@app_commands.describe(
+    scope="Choose whether to toggle moderation for this channel or the entire server"
+)
+@app_commands.choices(
+    scope=[
+        app_commands.Choice(name="Currrent Channel", value="channel"),
+        app_commands.Choice(name="Entire Server", value="server"),
+        app_commands.Choice(name="Check Current Status", value="status")
+    ]
+)
+@is_authed()
+async def toggle_moderation(interaction: discord.Interaction, scope: app_commands.Choice[str]):
+    if not interaction.guild_id:
+        await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+        return
+    
+    guild_cfg = get_guild_config(interaction.guild_id)
+
+    if scope.value == "status":
+        server_state = "DISABLED 🔴" if guild_cfg.get("server_disabled", False) else "ENABLED 🟢"
+        channel_disabled = interaction.channel_id in guild_cfg.get("disabled_channels", [])
+        channel_state = "DISABLED 🔴" if channel_disabled else "ENABLED 🟢"
+
+        disabled_list = guild_cfg.get("disabled_channels", [])
+        disabled_mentions = ", ".join(f"<#{cid}>" for cid in disabled_list) if disabled_list else "None"
+
+        embed_color = discord.Color.red() if (guild_cfg.get("server_disabled", False) or channel_disabled) else discord.Color.green()
+         
+        embed = discord.Embed(
+            title="🛡️ Moderation Status",
+            description=(
+                f"• **Server-wide:** {server_state}\n"
+                f"• **This Channel (<#{interaction.channel_id}>):** {channel_state}\n"
+                f"• **All Disabled Channels:** {disabled_mentions}"
+            ),
+            color=embed_color
+        )
+        embed.set_footer(text=f"Requested by {interaction.user.name}", icon_url=interaction.user.display_avatar.url)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return
+
+    if scope.value == "server":
+        guild_cfg["server disabled"] = not guild_cfg.get("server disabled", False)
+        save_mod_config(mod_config)
+
+        status = "DISABLED 🔴" if guild_cfg["server_disabled"] else "ENABLED 🟢"
+        await interaction.response.send_message(
+            f"Slur moderation in now **{status}** server-wide",
+            ephemeral=True
+        )
+
+    elif scope.value == "channel":
+        channel_id = interaction.channel_id
+        disabled_channels = guild_cfg.setdefault("disabled_channels", [])
+        if channel_id in disabled_channels:
+            mod_config["disabled_channels"].remove(channel_id)
+            save_mod_config(mod_config)
+            await interaction.response.send_message(
+                f"Slur moderation **ENABLED 🟢** for <#{channel_id}>.",
+                ephemeral=True
+            )
+        else:
+            disabled_channels.append(channel_id)
+            save_mod_config(mod_config)
+            await interaction.response.send_message(
+                f"Slur moderation **DISABLED 🔴** for <#{channel_id}>.",
+                ephemeral=True
+            )
+
 
 @bot.tree.command(
         name="help",
